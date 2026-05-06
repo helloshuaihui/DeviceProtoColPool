@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "sqlite3.h"
 #include <string>
 #include <vector>
@@ -37,7 +37,8 @@ public:
     int getLastError() const;
     //获取最后一个错误信息
     std::string getLastErrorMessage() const;
-
+    //判断文件是否存在
+    bool fileExists(const std::string& path) const;
 private:
     //数据库路径
     std::string m_dbPath;
@@ -49,8 +50,7 @@ private:
     int m_lastError;
     //最后一个错误信息
     std::string m_lastErrorMessage;
-    //判断文件是否存在
-    bool fileExists(const std::string& path) const;
+    
     //设置最后一个错误码和信息
     void setLastError(int code, const std::string& message);
     //查询回调函数

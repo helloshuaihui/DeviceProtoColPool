@@ -1,4 +1,4 @@
-#include "sqlite.h"
+﻿#include "sqlite.h"
 #include <fstream>
 #include <sstream>
 
@@ -9,7 +9,6 @@
 #include <sys/stat.h>
 #endif
 
-namespace protocolPool {
 namespace DB {
 
 SQLite::SQLite(const std::string& dbPath) 
@@ -42,7 +41,9 @@ bool SQLite::open() {
     }
     
     bool dbExists = fileExists(m_dbPath);
-    
+    if (!dbExists) {
+        return false;
+    }
     int rc = sqlite3_open(m_dbPath.c_str(), &m_db);
     if (rc != SQLITE_OK) {
         setLastError(rc, sqlite3_errmsg(m_db));
@@ -50,10 +51,6 @@ bool SQLite::open() {
         m_db = nullptr;
         return false;
     }
-    
-    if (!dbExists) {
-    }
-    
     setLastError(SQLITE_OK, "");
     return true;
 }
@@ -221,4 +218,3 @@ std::string SQLite::getLastErrorMessage() const {
 }
 
 } // namespace DB
-} // namespace protocolPool

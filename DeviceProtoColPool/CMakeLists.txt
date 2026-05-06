@@ -4,7 +4,7 @@
 cmake_minimum_required (VERSION 3.8)
 
 # 将源代码添加到此项目的可执行文件。
-add_executable (DeviceProtoColPool "DeviceProtoColPool.cpp" "DeviceProtoColPool.h" "protocolPool/DB/sqlite.h" "protocolPool/DB/sqlite.cpp")
+add_executable (DeviceProtoColPool "DeviceProtoColPool.cpp" "DeviceProtoColPool.h" "protocolPool/DB/sqlite.h" "protocolPool/DB/sqlite.cpp" "protocolPool/DeivceManagement/DeviceMangement.h" "protocolPool/DeivceManagement/DeviceMangement.cpp")
 
 if(WIN32) #win环境
 	find_package(httplib CONFIG REQUIRED)
