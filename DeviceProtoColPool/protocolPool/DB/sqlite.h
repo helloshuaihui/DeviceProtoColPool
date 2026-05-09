@@ -9,8 +9,10 @@ namespace DB {
 
 class SQLite {
 public:
-    SQLite(const std::string& dbPath);
+    SQLite(const std::string& dbPath="");
     ~SQLite();
+    //数据库路径
+    std::string m_dbPath;
     //打开链接
     bool open();
     //关闭链接
@@ -40,8 +42,6 @@ public:
     //判断文件是否存在
     bool fileExists(const std::string& path) const;
 private:
-    //数据库路径
-    std::string m_dbPath;
     //数据库句柄
     sqlite3* m_db;
     //互斥锁
