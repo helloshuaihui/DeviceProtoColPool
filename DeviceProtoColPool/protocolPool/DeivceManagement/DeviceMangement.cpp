@@ -36,6 +36,30 @@ bool DeviceInit::fileExists(const std::string& path) const {
 #endif
 }
 
+bool DeviceInit::createFile(const std::string& filePath)
+{
+    size_t pos = filePath.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        std::string dir = filePath.substr(0, pos);
+
+        struct stat info {};
+        if (!(stat(dir.c_str(), &info) == 0 && (info.st_mode & S_IFDIR))) {
+            // 创建目录
+            #ifdef _WIN32
+                mkdir(dir.c_str());
+            #else
+                mkdir(dir.c_str(), 0755);
+            #endif
+        }
+    }
+
+    // 2. 创建文件
+    std::ofstream file(filePath);
+    bool ok = file.is_open();
+    file.close();
+    return ok;
+}
+
 bool DeviceInit::createDefaultConfig() {
     cJSON* root = cJSON_CreateObject();
     if (!root) return false;
@@ -199,60 +223,62 @@ bool DeviceInit::loadDatabase() {
     }
     DB::SQLite db(m_dbPath);
     bool dbExists = db.fileExists(m_dbPath);
-    if (!db.open()) {
-        if (!dbExists) {
-            if (!createTables(db)) {
-                db.close();
-                return false;
-            }
+    if (!dbExists) {
+        createFile(m_dbPath);
+    }
+    bool isOpen = db.open();
+    if (isOpen) {
+        if (!db.tableExists("protocol_type")) {
+            const char* protocolTypeTable =
+                "CREATE TABLE IF NOT EXISTS protocol_type ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "protocol TEXT NOT NULL UNIQUE, "
+                "protocol_name TEXT NOT NULL, "
+                "description TEXT)";
+            std::cout << "protocol_type表初始化：" << (db.execute(protocolTypeTable) ? "成功" : "失败") << std::endl;
+
+            const char* protocolIndex = "CREATE INDEX IF NOT EXISTS idx_protocol ON protocol_type(protocol)";
+            db.execute(protocolIndex);
         }
-        else {
-            if (!db.tableExists("protocol_type") ||
-                !db.tableExists("devices") ||
-                !db.tableExists("collection_field")) {
-                if (!createTables(db)) {
-                    db.close();
-                    return false;
-                }
-            }
+        if (!db.tableExists("devices")) {
+            const char* devicesTable =
+                "CREATE TABLE IF NOT EXISTS devices ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "pid INTEGER NOT NULL, "
+                "protocol TEXT NOT NULL, "
+                "device_name TEXT, "
+                "description TEXT, "
+                "status INTEGER DEFAULT 1, "
+                "create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                "update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+            std::cout << "devices表初始化：" << (db.execute(devicesTable)?"成功":"失败" )<< std::endl;
+
+            const char* devicesIndex1 = "CREATE INDEX IF NOT EXISTS idx_devices_pid ON devices(pid)";
+            db.execute(devicesIndex1);
+        }
+        if (!db.tableExists("collection_field")) {
+            const char* collectionFieldTable =
+                "CREATE TABLE IF NOT EXISTS collection_field ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "did INTEGER NOT NULL, "
+                "field_name TEXT NOT NULL, "
+                "field_address TEXT NOT NULL, "
+                "field_value_type TEXT NOT NULL, "
+                "read_only INTEGER NOT NULL, "
+                "endianness TEXT, "
+                "description TEXT, "
+                "create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                "update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+            std::cout << "devices表初始化：" << (db.execute(collectionFieldTable) ? "成功" : "失败") << std::endl;
+
+            const char* fieldIndex = "CREATE INDEX IF NOT EXISTS idx_field_did ON collection_field(did)";
+            db.execute(fieldIndex);
         }
     }
     else {
-        if (!db.tableExists("protocol_type") ||
-            !db.tableExists("devices") ||
-            !db.tableExists("collection_field")) {
-            if (!createTables(db)) {
-                db.close();
-                return false;
-            }
-        }
-    }
-    m_dbInitialized = true;
-    return true;
-}
-
-bool DeviceInit::initDatabase() {
-
-    if (!m_configLoaded && !loadConfig()) {
+        db.close();
         return false;
     }
-
-    DB::SQLite db(m_dbPath);
-    bool dbExists = db.fileExists(m_dbPath);
-
-    if (!db.open()) {
-
-        return false;
-    }
-
-    if (!dbExists && m_ifAutoLoadDB) {
-        if (!createTables(db)) {
-            db.close();
-            return false;
-        }
-    }
-
-    db.close();
     m_dbInitialized = true;
     return true;
 }

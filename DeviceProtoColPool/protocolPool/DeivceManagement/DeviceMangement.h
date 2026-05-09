@@ -1,8 +1,17 @@
 ﻿#pragma once
 #include <cjson/cJSON.h>
 #include <string>
-#include "../DB/sqlite.h"
 #include <iostream>
+#include <fstream>
+#include <string>
+#ifdef _WIN32
+    #include <windows.h>
+    #include <direct.h> 
+#else
+    #include <unistd.h>
+    #include <sys/stat.h>
+#endif
+#include "../DB/sqlite.h"
 namespace DeviceMangement {
 
 class DeviceInit {
@@ -13,8 +22,6 @@ public:
     ~DeviceInit();
 	//加载配置文件
     bool loadConfig();
-	//初始化数据库
-    bool initDatabase();
 	//加载数据库（检查并创建数据表）
     bool loadDatabase();
 	//判断配置文件是否加载成功
@@ -65,6 +72,8 @@ private:
     bool createTables(DB::SQLite& db);
 	//判断文件是否存在
     bool fileExists(const std::string& path) const;
+    //创建文件
+    bool createFile(const std::string& filePath);
 };
 
 class DeviceCollect {
