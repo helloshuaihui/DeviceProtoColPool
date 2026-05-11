@@ -170,12 +170,15 @@ bool DeviceInit::loadDatabase() {
         return false;
     }
     db->m_dbPath = m_dbPath;
+    
     bool dbExists = db->fileExists(m_dbPath);
     if (!dbExists) {
         createFile(m_dbPath);
     }
     bool isOpen = db->open();
     if (isOpen) {
+        std::cout << "========================" << std::endl;
+
         if (!db->tableExists("protocol_type")) {
             const char* protocolTypeTable =
                 "CREATE TABLE IF NOT EXISTS protocol_type ("
@@ -196,7 +199,9 @@ bool DeviceInit::loadDatabase() {
                 "protocol TEXT NOT NULL, "
                 "device_name TEXT, "
                 "description TEXT, "
-                "status INTEGER DEFAULT 1, "
+                "ip TEXT NOT NULL, "
+                "port INTEGER NOT NULL, "
+                "status INTEGER DEFAULT 0, "
                 "create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
                 "update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
             std::cout << "devices表初始化：" << (db->execute(devicesTable)?"成功":"失败" )<< std::endl;
@@ -285,7 +290,6 @@ bool DeviceCollect::AddProtocolType(const ProtocolType& protocolType) {
     data["description"] = protocolType.description;
     return db->insert("protocol_type", data);
 }
-
 bool DeviceCollect::DeleteProtocolType(int id) {
     if (!db || !db->isOpen()) {
         return false;
@@ -303,9 +307,10 @@ bool DeviceCollect::AddDevice(const Device& device) {
     data["device_name"] = device.deviceName;
     data["description"] = device.description;
     data["status"] = std::to_string(device.status);
+    data["ip"] = device.ip;
+    data["port"] = std::to_string(device.port);
     return db->insert("devices", data);
 }
-
 bool DeviceCollect::DeleteDevice(int id) {
     if (!db || !db->isOpen()) {
         return false;
@@ -313,7 +318,6 @@ bool DeviceCollect::DeleteDevice(int id) {
     std::string whereClause = "id = " + std::to_string(id);
     return db->remove("devices", whereClause);
 }
-
 bool DeviceCollect::DeleteDevicesByProtocolId(int pid) {
     if (!db || !db->isOpen()) {
         return false;
@@ -335,7 +339,6 @@ bool DeviceCollect::AddCollectionField(const CollectionField& field) {
     data["description"] = field.description;
     return db->insert("collection_field", data);
 }
-
 bool DeviceCollect::DeleteCollectionField(int id) {
     if (!db || !db->isOpen()) {
         return false;
@@ -343,7 +346,6 @@ bool DeviceCollect::DeleteCollectionField(int id) {
     std::string whereClause = "id = " + std::to_string(id);
     return db->remove("collection_field", whereClause);
 }
-
 bool DeviceCollect::DeleteCollectionFieldsByDeviceId(int did) {
     if (!db || !db->isOpen()) {
         return false;
@@ -351,7 +353,39 @@ bool DeviceCollect::DeleteCollectionFieldsByDeviceId(int did) {
     std::string whereClause = "did = " + std::to_string(did);
     return db->remove("collection_field", whereClause);
 }
-
+void DeviceCollect::PrintAllDevices()
+{
+    std::cout << "开始加载协议" << std::endl;
+    for (const auto& protocolType : this->ProtocolTypes) {
+        std::cout << "协议: " << protocolType.protocol << std::endl;
+        std::cout << "协议名称: " << protocolType.protocolName << std::endl;
+        std::cout << "描述: " << protocolType.description << std::endl;
+    }
+    std::cout << std::endl;
+    std::cout << "开始加载设备" << std::endl;
+    for (const auto& device : this->Devices) {
+        std::cout << "协议: " << device.protocol << std::endl;
+        std::cout << "设备名称: " << device.deviceName << std::endl;
+        std::cout << "描述: " << device.description << std::endl;
+        std::cout << "状态: " << device.status << std::endl;
+        std::cout << "采集字段: " << std::endl;
+        std::cout << "IP地址: " << device.ip << std::endl;
+        std::cout << "端口号: " << device.port << std::endl;
+        std::cout << std::endl;
+        for (const auto& field : device.CollectionFields) {
+            std::cout << "字段名称: " << field.fieldName << std::endl;
+            std::cout << "字段地址: " << field.fieldAddress << std::endl;
+            std::cout << "字段值类型: " << field.fieldValueType << std::endl;
+            std::cout << "是否只读: " << field.readOnly << std::endl;
+            std::cout << "字节序: " << field.endianness << std::endl;
+            std::cout << "描述: " << field.description << std::endl;
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+}
 bool DeviceCollect::LoadDeviceData()
 {
     auto dbData = db->query("select * from protocol_type");
@@ -396,13 +430,19 @@ bool DeviceCollect::LoadDeviceData()
             if (field.compare("description") == 0) {
                 device.description = value;
             }
+            if (field.compare("ip") == 0) {
+                device.ip = value;
+            }
+            if (field.compare("port") == 0) {
+                device.port = std::atoi(value.c_str());
+            }
             if (field.compare("status") == 0) {
                 device.status = std::atoi(value.c_str());
             }
         }
         this->Devices.push_back(device);
     }
-    dbData = db->query("select * from CollectionField");
+    dbData = db->query("select * from collection_field");
     for (const auto& row : dbData) {
         CollectionField collectionField = { 0 };
         for (const auto& pair : row) {
@@ -433,22 +473,26 @@ bool DeviceCollect::LoadDeviceData()
                 collectionField.description = value;
             }
         }
-        Device& device = GetDeviceInfo(collectionField.did);
-        if (device.id != 0) {
-            device.CollectionFields.push_back(collectionField);
+        Device* device = GetDeviceInfo(collectionField.did);
+        if (device != nullptr) {
+            device->CollectionFields.push_back(collectionField);
         }
     }
     return true;
 }
-
-Device& DeviceCollect::GetDeviceInfo(int id)
+Device* DeviceCollect::GetDeviceInfo(int id)
 {
-    for (auto device : this->Devices) {
-        if (device.id = id) {
-            return device;
+    for (auto& device : this->Devices) {
+        if (device.id == id) {
+            return &device;
         }
     }
-    return Device();
+    return nullptr;
+}
+
+bool DeviceCollect::LoadDeviceToPool()
+{
+    return false;
 }
 
 } // namespace DeviceMangement

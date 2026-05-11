@@ -1,9 +1,11 @@
 ﻿#pragma once
+#pragma execution_character_set("utf-8")
 #include <cjson/cJSON.h>
 #include <string>
 #include <iostream>
 #include <fstream>
-#include <string>
+#include "../DB/sqlite.h"
+
 #ifdef _WIN32
     #include <windows.h>
     #include <direct.h> 
@@ -11,7 +13,6 @@
     #include <unistd.h>
     #include <sys/stat.h>
 #endif
-#include "../DB/sqlite.h"
 namespace DeviceMangement {
 
 class DeviceInit {
@@ -76,67 +77,68 @@ private:
 };
 // 协议类型
 struct ProtocolType {
-    int32_t id;                 // 协议ID
+    int32_t id = 0;                 // 协议ID
     std::string protocol;       // 协议类型
     std::string protocolName;   // 协议名称
     std::string description;    // 协议描述
 };
 // 采集字段
 struct CollectionField {
-    int32_t id;                 // 字段ID
-    int32_t did;                // 关联设备ID
+    int32_t id = 0;                 // 字段ID
+    int32_t did = 0;                // 关联设备ID
     std::string fieldName;      // 字段名
     std::string fieldAddress;   // 寄存器地址
     std::string fieldValueType; // 值类型
-    int32_t readOnly;           // 是否只读 1是 0否
+    int32_t readOnly = 0;           // 是否只读 1是 0否
     std::string endianness;     // 字节序（Modbus使用）
     std::string description;    // 字段描述
 };
 // 设备
 struct Device {
-    int32_t id;               // 设备ID
-    int32_t pid;              // 关联协议表ID
+    int32_t id = 0;               // 设备ID
+    int32_t pid = 0;              // 关联协议表ID
     std::string protocol;     // 协议类型
     std::string deviceName;   // 设备名称
     std::string description;  // 设备描述
-    int32_t status;           // 设备状态 1=正常 0=禁用
-    bool connStatu;           //在线状态
+    int32_t status = 0; ;        // 设备状态 1=正常 0=禁用
+    bool connStatu = false;           //在线状态
+    std::string ip;                 // 设备IP地址
+    int32_t port = 0;               // 设备端口号（Modbus等协议使用）
     std::vector<CollectionField> CollectionFields;
 };
 class DeviceCollect : public DeviceInit{
 public:
     DeviceCollect();
     ~DeviceCollect();
+    //加载设备基础数据
     bool LoadDeviceData();
-
-    //========== protocol_type 表操作 ==========
     // 添加协议类型
     bool AddProtocolType(const ProtocolType& protocolType);
     // 删除协议类型
     bool DeleteProtocolType(int id);
-    // 根据协议类型名称删除
-    bool DeleteProtocolTypeByName(const std::string& protocol);
-
-    //========== devices 表操作 ==========
     // 添加设备
     bool AddDevice(const Device& device);
     // 删除设备
     bool DeleteDevice(int id);
     // 根据协议ID删除设备
     bool DeleteDevicesByProtocolId(int pid);
-
-    //========== collection_field 表操作 ==========
     // 添加采集字段
     bool AddCollectionField(const CollectionField& field);
     // 删除采集字段
     bool DeleteCollectionField(int id);
     // 根据设备ID删除采集字段
     bool DeleteCollectionFieldsByDeviceId(int did);
-
+    //打印当前所有设备 协议
+    void PrintAllDevices();
 private:
+    //协议类型列表
     std::vector<ProtocolType> ProtocolTypes;
+    //设备列表
     std::vector< Device> Devices;
-    Device& GetDeviceInfo(int id);
+    //根据ID获取设备信息
+    Device* GetDeviceInfo(int id);
+    //加载设备到协议池
+    bool LoadDeviceToPool();
 };
 
 } // namespace DeviceMangement

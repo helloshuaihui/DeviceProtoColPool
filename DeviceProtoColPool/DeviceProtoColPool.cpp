@@ -1,8 +1,10 @@
 ﻿#include "DeviceProtoColPool.h"
 #include <iostream>
 #include "protocolPool/DB/sqlite.h"
+#pragma execution_character_set("utf-8")
 #include <httplib.h>
 #include "protocolPool/DeivceManagement/DeviceMangement.h"
+#include "protocolPool/TOOL/ThreadPool.h"
 extern  "C" {
 }
 
@@ -92,27 +94,44 @@ using namespace DeviceMangement;
 
 int main()
 {    
-    DeviceInit test;
+    #ifdef WIN32
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+    #endif // WIN32
+
+    //DeviceCollect test;
+    //
+    //if (test.isConfigLoaded()) {
+    //    cout << "配置加载成功" << endl;
+    //    cout << "数据库路径: " << test.getDBPath() << endl;
+    //    cout << "采集间隔: " << test.getCollectionInterval() << endl;
+    //    cout << "自动加载数据库: " << (test.getIfAutoLoadDB() ? "是" : "否") << endl;
+    //    cout << "自动重连: " << (test.getIsReconnect() ? "是" : "否") << endl;
+    //    cout << "定时采集: " << (test.getIsTimedCollection() ? "是" : "否") << endl;
+    //} else {
+    //    cout << "配置加载失败" << endl;
+    //    return -1;
+    //}
+    //cout << "开始加载数据库" << endl;
+    //if (test.isDatabaseInitialized()) {
+    //    cout << "数据库加载成功" << endl;
+    //    cout << "数据库已就绪: " << test.getDBPath() << endl;
+    //} else {
+    //    cout << "数据库加载失败" << endl;
+    //    return -1;
+    //}
+    //test.PrintAllDevices();
     
-    if (test.loadConfig()) {
-        cout << "配置加载成功" << endl;
-        cout << "数据库路径: " << test.getDBPath() << endl;
-        cout << "采集间隔: " << test.getCollectionInterval() << endl;
-        cout << "自动加载数据库: " << (test.getIfAutoLoadDB() ? "是" : "否") << endl;
-        cout << "自动重连: " << (test.getIsReconnect() ? "是" : "否") << endl;
-        cout << "定时采集: " << (test.getIsTimedCollection() ? "是" : "否") << endl;
-    } else {
-        cout << "配置加载失败" << endl;
-        return -1;
-    }
-    
-    if (test.loadDatabase()) {
-        cout << "数据库加载成功" << endl;
-        cout << "数据库已就绪: " << test.getDBPath() << endl;
-    } else {
-        cout << "数据库加载失败" << endl;
-        return -1;
-    }
-    
+    //线程调用
+    //int i = 0;
+    //TOOL::ThreadPool tp(6,1000);
+    //for (int j = 0; j < 1000;j++) {
+    //    tp.submit([&i]() -> void {
+    //        i += 1;
+    //        cout << "i=" << i << endl;
+    //        });
+    //}
+
+    //Sleep(1000000);
     return 0;
 }
