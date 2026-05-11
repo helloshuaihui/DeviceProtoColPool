@@ -17,7 +17,7 @@ if(WIN32) #win环境
 	target_link_libraries(DeviceProtoColPool PRIVATE httplib::httplib)
 	find_package(cJSON CONFIG REQUIRED)
 	target_link_libraries(DeviceProtoColPool PRIVATE cjson)
-	find_package(unofficial-sqlite3 CONFIG REQUIRED)
+	find_package(unofficial-sqlite3 CONFIG REQUIRED) 
     target_link_libraries(DeviceProtoColPool PRIVATE unofficial::sqlite3::sqlite3)
 endif()
 if(UNIX) #linux环境

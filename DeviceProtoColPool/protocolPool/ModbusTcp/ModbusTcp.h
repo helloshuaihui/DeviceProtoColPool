@@ -1,5 +1,5 @@
 ﻿#pragma once
-#ifndef MODBUSTCP_H
+#ifndef MODBUSTCP_H 
 #define MODBUSTCP_H
 #include "../TCP/TcpSocketClass.h"
 namespace TCP {

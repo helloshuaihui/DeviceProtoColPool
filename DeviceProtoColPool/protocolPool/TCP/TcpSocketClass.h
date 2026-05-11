@@ -8,7 +8,7 @@
 #include <iomanip>
 #include <sstream>
 #include <mutex>
-#ifdef _WIN32 // WIN32
+#ifdef _WIN32 // WIN32 
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
 	#pragma comment(lib, "ws2_32.lib")

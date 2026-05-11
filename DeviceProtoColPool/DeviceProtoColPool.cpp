@@ -10,7 +10,7 @@ extern  "C" {
 
 using namespace std;
 using namespace DB;
-using namespace DeviceMangement;
+using namespace DeviceMangement; 
 //void testSQLite() {
 //#ifdef _WIN32
 //    string dbPath = "test.db";

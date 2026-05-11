@@ -1,4 +1,4 @@
-﻿#include "ModbusTcp.h"
+﻿#include "ModbusTcp.h" 
 namespace TCP {
 	ModbusTcp::ModbusTcp()
 	{

@@ -14,7 +14,7 @@ namespace TCP {
 			}
 			return true;
 		}
-	#endif // WIN32
+	#endif // WIN32 
 	TCPSOCK TcpSocketClass::creatTcpScoketserver(std::string ip, int port)
 	{
 		TCPSOCK NewSocket = socket(AF_INET, SOCK_STREAM, 0);
