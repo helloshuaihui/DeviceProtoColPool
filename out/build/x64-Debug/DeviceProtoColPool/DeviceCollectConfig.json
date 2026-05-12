@@ -1,0 +1,9 @@
+{
+	"DBPath":	"./DB/Device.db",
+	"isTimedCollection":	true,
+	"CollectionInterval":	1000,
+	"MaxConnectionTime":	1000,
+	"isReconnect":	true,
+	"ReconnectInterval":	1000,
+	"ifAutoLoadDB":	true
+}

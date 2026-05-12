@@ -5,7 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include "../DB/sqlite.h" 
-
+#include "../ModbusTcp/ModbusTcp.h"
 #ifdef _WIN32
     #include <windows.h>
     #include <direct.h> 
@@ -139,6 +139,14 @@ private:
     Device* GetDeviceInfo(int id);
     //加载设备到协议池
     bool LoadDeviceToPool();
+    //ModbusTcp 设备管理
+    ModbusTcp::ModbusTcp ModbusTcpDevices;
+    //是否初始化ModbusTcp
+    bool isInitModbusTcp = false;
+    //设备委托 将设备对应到相应的驱动中进行管理
+    bool DevicesMapping();
+    //modbusTcp 设备管理
+    bool ModbusTcpDevicesMapping(Device& device);
 };
 
 } // namespace DeviceMangement

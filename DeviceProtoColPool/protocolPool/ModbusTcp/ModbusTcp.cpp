@@ -1,5 +1,5 @@
-﻿#include "ModbusTcp.h" 
-namespace TCP {
+#include "ModbusTcp.h" 
+namespace ModbusTcp {
 	ModbusTcp::ModbusTcp()
 	{
 	}
@@ -7,7 +7,28 @@ namespace TCP {
 	ModbusTcp::~ModbusTcp()
 	{
 	}
-    //读寄存器
+    bool ModbusTcp::addDevice(ModbusTcpDevice &modbusTcpDevice)
+    {
+
+        for(int i = 0; i < modbusTcpDevices.size(); i++){
+            if(modbusTcpDevices[i].id == modbusTcpDevice.id){
+                return false;
+            }
+        }
+        modbusTcpDevices.push_back(modbusTcpDevice);
+        return true;
+    }
+    bool ModbusTcp::delDevice(int id)
+    {
+        for(int i = 0; i < modbusTcpDevices.size(); i++){
+            if(modbusTcpDevices[i].id == id){
+                modbusTcpDevices.erase(modbusTcpDevices.begin() + i);
+                return true;
+            }
+        }
+        return false;
+    }
+    // 读寄存器
     bool ModbusTcp::readRegister(ModbusTcpInfo &modbusTcpInfo, RegisterBuf &registerBuf)
     {
         if (modbusTcpInfo.sock <= 0) {
