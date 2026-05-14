@@ -130,6 +130,8 @@ public:
     bool DeleteCollectionFieldsByDeviceId(int did);
     //打印当前所有设备 协议
     void PrintAllDevices();
+    //打印modbus协议
+    void PrintModbusDevices();
 private:
     //协议类型列表
     std::vector<ProtocolType> ProtocolTypes;
@@ -147,6 +149,8 @@ private:
     bool DevicesMapping();
     //modbusTcp 设备管理
     bool ModbusTcpDevicesMapping(Device& device);
+    //初始化采集配置
+    void initCollectConfig();
 };
 
 } // namespace DeviceMangement

@@ -99,28 +99,29 @@ int main()
     SetConsoleCP(65001);
     #endif // WIN32
 
-    //DeviceCollect test;
-    //
-    //if (test.isConfigLoaded()) {
-    //    cout << "配置加载成功" << endl;
-    //    cout << "数据库路径: " << test.getDBPath() << endl;
-    //    cout << "采集间隔: " << test.getCollectionInterval() << endl;
-    //    cout << "自动加载数据库: " << (test.getIfAutoLoadDB() ? "是" : "否") << endl;
-    //    cout << "自动重连: " << (test.getIsReconnect() ? "是" : "否") << endl;
-    //    cout << "定时采集: " << (test.getIsTimedCollection() ? "是" : "否") << endl;
-    //} else {
-    //    cout << "配置加载失败" << endl;
-    //    return -1;
-    //}
-    //cout << "开始加载数据库" << endl;
-    //if (test.isDatabaseInitialized()) {
-    //    cout << "数据库加载成功" << endl;
-    //    cout << "数据库已就绪: " << test.getDBPath() << endl;
-    //} else {
-    //    cout << "数据库加载失败" << endl;
-    //    return -1;
-    //}
-    //test.PrintAllDevices();
+    DeviceCollect test;
+    
+    if (test.isConfigLoaded()) {
+        cout << "配置加载成功" << endl;
+        cout << "数据库路径: " << test.getDBPath() << endl;
+        cout << "采集间隔: " << test.getCollectionInterval() << endl;
+        cout << "自动加载数据库: " << (test.getIfAutoLoadDB() ? "是" : "否") << endl;
+        cout << "自动重连: " << (test.getIsReconnect() ? "是" : "否") << endl;
+        cout << "定时采集: " << (test.getIsTimedCollection() ? "是" : "否") << endl;
+    } else {
+        cout << "配置加载失败" << endl;
+        return -1;
+    }
+    cout << "开始加载数据库" << endl;
+    if (test.isDatabaseInitialized()) {
+        cout << "数据库加载成功" << endl;
+        cout << "数据库已就绪: " << test.getDBPath() << endl;
+    } else {
+        cout << "数据库加载失败" << endl;
+        return -1;
+    }
+    test.PrintAllDevices();
+    test.PrintModbusDevices();
     
     //线程调用
     //int i = 0;

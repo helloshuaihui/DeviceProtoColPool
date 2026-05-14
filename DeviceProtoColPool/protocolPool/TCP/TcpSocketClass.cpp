@@ -58,7 +58,7 @@ namespace TCP {
 		}
 		return NewSocket;
 	}
-	TCPSOCK TcpSocketClass::connTcpScokerServer(std::string ip, int port)
+	TCPSOCK TcpSocketClass::connTcpScokerServer(std::string ip, int port,int timeout)
 	{
 		TCPSOCK NewSocket = socket(AF_INET, SOCK_STREAM, 0);
 		if (INVALID_SOCK == NewSocket)
@@ -66,54 +66,117 @@ namespace TCP {
 			#ifdef _WIN32
 				SetErrorMsg("创建客户端句柄失败", WSAGetLastError());
 			#elif __linux__
-				SetErrorMsg("创建客户端句柄失败", SOCK_ERROR);
+				SetErrorMsg("创建客户端句柄失败", errno);  // Linux 用 errno
 			#endif
+				return -1;
+		}
+
+		sockaddr_in serverAddr{};
+		serverAddr.sin_family = AF_INET;
+		serverAddr.sin_port = htons(port);
+		if (inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr) != 1) {
+			#ifdef _WIN32
+				SetErrorMsg("IP地址解析失败", WSAGetLastError());
+			#elif __linux__
+				SetErrorMsg("IP地址解析失败", errno);
+			#endif
+			closesocket(NewSocket);  // 失败必须关闭socket
 			return -1;
 		}
-		else {
-			sockaddr_in serverAddr{};
-			serverAddr.sin_family = AF_INET;
-			serverAddr.sin_port = htons(port);
-			if (inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr) != 1) {
-				#ifdef _WIN32
-					SetErrorMsg("IP地址解析失败", WSAGetLastError());
-				#elif __linux__
-					SetErrorMsg("IP地址解析失败", SOCK_ERROR);
-				#endif
-				return -1;
-			}
-			// 4. 连接服务器
-			if (connect(NewSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCK_ERROR) {
-				#ifdef _WIN32
+		#ifdef _WIN32
+			u_long mode = 1;
+			ioctlsocket(NewSocket, FIONBIO, &mode);
+		#else
+			int flags = fcntl(NewSocket, F_GETFL, 0);
+			fcntl(NewSocket, F_SETFL, flags | O_NONBLOCK);
+		#endif
+
+		// 发起连接（非阻塞）
+		int ret = connect(NewSocket, (sockaddr*)&serverAddr, sizeof(serverAddr));
+		if (ret == SOCK_ERROR)
+		{
+			#ifdef _WIN32
+				if (WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS)
+				{
 					SetErrorMsg("连接服务器失败", WSAGetLastError());
-				#elif __linux__
-					SetErrorMsg("连接服务器失败", SOCK_ERROR);
-				#endif
-				return -1;
-			}
-			else {
-				if (defaultTcpNoDelay) {
-					EnableTcpNoDelay(NewSocket);
+					closesocket(NewSocket);
+					return -1;
 				}
-				//获取端口
-				int LocalPort = -1;
-				sockaddr_in localAddr{};
-				socklen_t addrLen = sizeof(localAddr);
-				if (getsockname(NewSocket, (sockaddr*)&localAddr, &addrLen) == SOCK_ERROR) {
-					#ifdef _WIN32 //win32
-						SetErrorMsg("获取端口失败", WSAGetLastError());
-					#elif __linux__ //linux
-						SetErrorMsg("获取端口失败", SOCK_ERROR);
-					#endif
+			#else
+				if (errno != EINPROGRESS)
+				{
+					SetErrorMsg("连接服务器失败", errno);
+					close(NewSocket);
+					return -1;
 				}
-				else {
-					LocalPort = ntohs(localAddr.sin_port);
-				}
-				SocketPool.push_back(InitTCPSOCKINFO(ip, LocalPort, NewSocket, SocketType::client));
-			}
+			#endif
 		}
+		fd_set writeSet;
+		FD_ZERO(&writeSet);
+		FD_SET(NewSocket, &writeSet);
+
+		timeval coonTimeOut{};
+		coonTimeOut.tv_sec = timeout;
+		coonTimeOut.tv_usec = 0;
+
+		int selectRet = select(NewSocket + 1, NULL, &writeSet, NULL, &coonTimeOut);
+		if (selectRet <= 0)
+		{
+			#ifdef _WIN32
+				SetErrorMsg("连接服务器超时", selectRet == 0 ? 10060 : WSAGetLastError());
+			#else
+				SetErrorMsg("连接服务器超时", errno);
+			#endif
+			closesocket(NewSocket);
+			return -1;
+		}
+
+		// ====================== 检查连接是否真正成功 ======================
+		int error = 0;
+		socklen_t len = sizeof(error);
+		getsockopt(NewSocket, SOL_SOCKET, SO_ERROR, (char*)&error, &len);
+
+		if (error != 0)
+		{
+			#ifdef _WIN32
+				SetErrorMsg("连接服务器失败", error);
+			#else
+				SetErrorMsg("连接服务器失败", error);
+			#endif
+			closesocket(NewSocket);
+			return -1;
+		}
+		#ifdef _WIN32
+			mode = 0;
+			ioctlsocket(NewSocket, FIONBIO, &mode);
+		#else
+			flags = fcntl(NewSocket, F_GETFL, 0);
+			fcntl(NewSocket, F_SETFL, flags & ~O_NONBLOCK);
+		#endif
+
+		// 以下是你原来的逻辑
+		if (defaultTcpNoDelay) {
+			EnableTcpNoDelay(NewSocket);
+		}
+
+		int LocalPort = -1;
+		sockaddr_in localAddr{};
+		socklen_t addrLen = sizeof(localAddr);
+		if (getsockname(NewSocket, (sockaddr*)&localAddr, &addrLen) == SOCK_ERROR) {
+			#ifdef _WIN32
+				SetErrorMsg("获取端口失败", WSAGetLastError());
+			#elif __linux__
+				SetErrorMsg("获取端口失败", errno);
+			#endif
+		}
+		else {
+			LocalPort = ntohs(localAddr.sin_port);
+		}
+
+		SocketPool.push_back(InitTCPSOCKINFO(ip, LocalPort, NewSocket, SocketType::client));
+
 		return NewSocket;
-	}
+}
 	void TcpSocketClass::PrintError()
 	{
 		if (this->IsPrintError) {

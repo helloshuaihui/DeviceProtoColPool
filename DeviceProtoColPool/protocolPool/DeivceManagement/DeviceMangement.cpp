@@ -1,4 +1,4 @@
-#include "DeviceMangement.h"
+﻿#include "DeviceMangement.h"
 #include <fstream>
 #include <sstream>
 
@@ -274,9 +274,12 @@ bool DeviceInit::getIfAutoLoadDB() const {
 
 DeviceCollect::DeviceCollect() {
     //加载配置 数据库
-    this->loadConfig();
-    this->loadDatabase();
-    this->LoadDeviceData();
+    this->loadConfig(); //加载本地配置文件
+    this->loadDatabase(); //加载数据库
+    this->LoadDeviceData(); //加载设备数据
+    this->DevicesMapping(); //设备映射倒对应的协议
+    this->initCollectConfig(); //初始化连接配置
+    this->ModbusTcpDevices.initDeviceConn(); //初始化连接
 }
 
 DeviceCollect::~DeviceCollect() {}
@@ -386,6 +389,24 @@ void DeviceCollect::PrintAllDevices()
     }
     std::cout << std::endl;
 }
+void DeviceCollect::PrintModbusDevices()
+{
+    std::vector<ModbusTcp::ModbusTcpDevice> devices = this->ModbusTcpDevices.GetAllDevices();
+    std::cout << devices.size() << std::endl;
+    for (auto modbusDevice: devices) {
+        std::cout << "=======================" << std::endl;
+        std::cout << "ip：" << modbusDevice.ip << std::endl;
+        std::cout << "port：" << modbusDevice.port << std::endl;
+        for (auto modbusFiled : modbusDevice.CollectionFields) {
+            std::cout << "=========监听字段========" << std::endl;
+            std::cout << "地址位：" << modbusFiled.fieldAddress<< std::endl;
+            std::cout << "readOnly：" << modbusFiled.readOnly << std::endl;
+            std::cout << "registerLen：" << modbusFiled.registerLen << std::endl;
+        }
+        std::cout  << std::endl;
+        std::cout  << std::endl;
+    }
+}
 bool DeviceCollect::LoadDeviceData()
 {
     auto dbData = db->query("select * from protocol_type");
@@ -458,7 +479,7 @@ bool DeviceCollect::LoadDeviceData()
                 collectionField.fieldName = value;
             }
             if (field.compare("field_address") == 0) {
-                collectionField.fieldAddress = value;
+                collectionField.fieldAddress = std::atoi(value.c_str());
             }
             if (field.compare("field_value_type") == 0) {
                 collectionField.fieldValueType = value;
@@ -499,7 +520,7 @@ bool DeviceCollect::LoadDeviceToPool()
 bool DeviceCollect::DevicesMapping()
 {
     for (auto& device : this->Devices) {
-        if (device.protocol == "ModbusTcp") {
+        if (device.protocol == "MODBUSTCP") {
             ModbusTcpDevicesMapping(device);
         }
     }
@@ -516,42 +537,8 @@ bool DeviceCollect::ModbusTcpDevicesMapping(Device &device)
         ModbusTcp::CollectionField collectionField = {0};
         collectionField.id = device.CollectionFields[i].id;
         collectionField.fieldAddress = device.CollectionFields[i].fieldAddress;
-        if(device.CollectionFields[i].fieldValueType.compare("uint8") == 0){
-            collectionField.buffType = ModbusTcp::BuffType::D_UINT8;
-            collectionField.registerLen = 1;
-        }else if(device.CollectionFields[i].fieldValueType.compare("uint16") == 0){
-            collectionField.buffType = ModbusTcp::BuffType::D_UINT16;
-            collectionField.registerLen = 1;
-        }else if(device.CollectionFields[i].fieldValueType.compare("uint32") == 0){
-            collectionField.buffType = ModbusTcp::BuffType::D_UINT32;
-            collectionField.registerLen = 2;
-        }else if(device.CollectionFields[i].fieldValueType.compare("uint64") == 0){
-            collectionField.buffType = ModbusTcp::BuffType::D_UINT64;
-            collectionField.registerLen = 4;
-        }else if(device.CollectionFields[i].fieldValueType.compare("int16") == 0){
-            collectionField.buffType = ModbusTcp::BuffType::D_INT16;
-            collectionField.registerLen = 1;
-        }else if(device.CollectionFields[i].fieldValueType.compare("int32") == 0){
-            collectionField.registerLen = 2;
-            collectionField.buffType = ModbusTcp::BuffType::D_INT32;
-            collectionField.registerLen = 2;
-        }else if(device.CollectionFields[i].fieldValueType.compare("int64") == 0){
-            collectionField.registerLen = 4;
-            collectionField.buffType = ModbusTcp::BuffType::D_INT64;
-        }else if(device.CollectionFields[i].fieldValueType.compare("float") == 0){
-            collectionField.buffType = ModbusTcp::BuffType::D_FLOAT;
-            collectionField.registerLen = 2;
-        }
         collectionField.readOnly = device.CollectionFields[i].readOnly;
-        if(device.CollectionFields[i].endianness.compare("ABCD") == 0){
-            collectionField.byteSequence = ModbusTcp::ByteSequence::ABCD;
-        }else if(device.CollectionFields[i].endianness.compare("BADC") == 0){
-            collectionField.byteSequence = ModbusTcp::ByteSequence::BADC;
-        }else if(device.CollectionFields[i].endianness.compare("CDAB") == 0){
-            collectionField.byteSequence = ModbusTcp::ByteSequence::CDAB;
-        }else if(device.CollectionFields[i].endianness.compare("DCBA") == 0){
-            collectionField.byteSequence = ModbusTcp::ByteSequence::DCBA;
-        }
+        collectionField.SetValueInfo(device.CollectionFields[i].endianness, device.CollectionFields[i].fieldValueType);
         modbusTcpDevice.CollectionFields.push_back(collectionField);
     }
     bool isAdd = ModbusTcpDevices.addDevice(modbusTcpDevice);
@@ -560,6 +547,16 @@ bool DeviceCollect::ModbusTcpDevicesMapping(Device &device)
         return true;
     }
     return false;
+}
+
+void DeviceCollect::initCollectConfig()
+{
+    //初始化modbus采集配置
+    ModbusTcpDevices.isTimedCollection = getIsTimedCollection();
+    ModbusTcpDevices.CollectionInterval = getCollectionInterval();
+    ModbusTcpDevices.MaxConnectionTime = getMaxConnectionTime();
+    ModbusTcpDevices.isReconnect = getIsReconnect();
+    ModbusTcpDevices.ReconnectInterval = getReconnectInterval();
 }
 
 } // namespace DeviceMangement

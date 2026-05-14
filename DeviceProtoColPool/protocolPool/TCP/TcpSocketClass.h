@@ -49,7 +49,7 @@ namespace TCP {
 	{
 	public:
 		TCPSOCK creatTcpScoketserver(std::string ip,int port);
-		TCPSOCK connTcpScokerServer(std::string ip, int port);
+		TCPSOCK connTcpScokerServer(std::string ip, int port,int timeout=10);
 		//TCP_NODELAY控制
 		bool EnableTcpNoDelay(TCPSOCK sock);
 		bool DisableTcpNoDelay(TCPSOCK sock);

@@ -2,7 +2,7 @@
 #ifndef MODBUSTCP_H 
 #define MODBUSTCP_H
 #include "../TCP/TcpSocketClass.h"
-
+#include "../TOOL/ThreadPool.h"
 namespace ModbusTcp {
 	//数据类型
 	enum class BuffType :int {
@@ -102,7 +102,7 @@ namespace ModbusTcp {
 	struct CollectionField {
 		int32_t id = 0;                 // 字段ID
 		int32_t did = 0;                // 关联设备ID
-		std::string fieldAddress;    	// 寄存器地址
+		int fieldAddress = 0;	    	// 寄存器地址
 		int32_t registerLen = 0;      // 寄存器长度
 		BuffType buffType = BuffType::D_UINT16;
 		int32_t readOnly = 0;        // 是否只读 1是 0否
@@ -163,6 +163,89 @@ namespace ModbusTcp {
 				break;
 			}
 		}
+		//设置寄存器长度
+		void setRegisterLen() {
+			switch (buffType)
+			{
+			case BuffType::D_UINT8:
+				registerLen = 1;
+				break;
+			case BuffType::D_UINT16:
+				registerLen = 2;
+				break;
+			case BuffType::D_UINT32:
+				registerLen = 4;
+				break;
+			case BuffType::D_INT16:
+				registerLen = 2;
+				break;
+			case BuffType::D_INT32:
+				registerLen = 4;
+				break;
+			case BuffType::D_FLOAT:
+				registerLen = 4;
+				break;
+			case BuffType::D_INT64:
+				registerLen = 8;
+				break;
+			case BuffType::D_UINT64:
+				registerLen = 8;
+				break;
+			default:
+				break;
+			}
+		}
+		/*
+			设置字节序以及值类型
+			byteOrder=ABCD/CDAB/BADC/DCBA
+			valueType=uint8/uint32/uint64/int16/int32/int64/float
+		*/
+		void SetValueInfo(std::string byteOrder="ABCD", std::string valueType = "uint16") {
+			if (valueType.compare("uint8") == 0) {
+				buffType = BuffType::D_UINT8;
+				registerLen = 1;
+			}
+			else if (valueType.compare("uint16") == 0) {
+				buffType = BuffType::D_UINT16;
+				registerLen = 2;
+			}
+			else if (valueType.compare("uint32") == 0) {
+				buffType = BuffType::D_UINT32;
+				registerLen = 4;
+			}
+			else if (valueType.compare("uint64") == 0) {
+				buffType = BuffType::D_UINT64;
+				registerLen = 8;
+			}
+			else if (valueType.compare("int16") == 0) {
+				buffType = BuffType::D_INT16;
+				registerLen = 2;
+			}
+			else if (valueType.compare("int32") == 0) {
+				buffType = BuffType::D_INT32;
+				registerLen = 4;
+			}
+			else if (valueType.compare("int64") == 0) {
+				registerLen = 8;
+				buffType = BuffType::D_INT64;
+			}
+			else if (valueType.compare("float") == 0) {
+				buffType = BuffType::D_FLOAT;
+				registerLen = 4;
+			}
+			if (byteOrder.compare("ABCD") == 0) {
+				byteSequence = ByteSequence::ABCD;
+			}
+			else if (byteOrder.compare("BADC") == 0) {
+				byteSequence = ByteSequence::BADC;
+			}
+			else if (byteOrder.compare("CDAB") == 0) {
+				byteSequence = ByteSequence::CDAB;
+			}
+			else if (byteOrder.compare("DCBA") == 0) {
+				byteSequence = ByteSequence::DCBA;
+			}
+		}
 	};
 	// 设备定义
 	struct ModbusTcpDevice {
@@ -172,6 +255,7 @@ namespace ModbusTcp {
 		TCPSOCK sock = 0;				// 设备socket
 		std::string ip;                 // 设备IP地址
 		int32_t port = 0;               // 设备端口号
+		std::string errMsg;				//错误信息
 		std::vector<CollectionField> CollectionFields;
 	};
 	class ModbusTcp : TCP::TcpSocketClass
@@ -179,13 +263,50 @@ namespace ModbusTcp {
 	public:
 		ModbusTcp();
 		~ModbusTcp();
+		//是否定时采集数据
+		bool isTimedCollection = false;
+		//定时采集时间间隔
+		int32_t CollectionInterval = 0;
+		//最大连接时间
+		int32_t MaxConnectionTime = 0;
+		//是否重连
+		bool isReconnect = false;
+		//重连时间间隔
+		int32_t ReconnectInterval = 0;
+		//添加设备
 		bool addDevice(ModbusTcpDevice& modbusTcpDevice);
+		//删除设备
 		bool delDevice(int id);
-		private:
+		//获取所有设备
+		std::vector<ModbusTcpDevice> GetAllDevices();
+		//初始化设备连接
+		void initDeviceConn();
+	private:
 		//modbus设备列表
 		std::vector<ModbusTcpDevice> modbusTcpDevices;
+		//线程池
+		TOOL::ThreadPool* tPool;
+		//线程池是否初始化
+		bool isInitThreadPool = false;
+		//设备锁操作
+		std::mutex deviceMutex;
+		//数据锁操作
+		std::mutex dataMutex;
+		//定时任务
+		void timerTask();
+		//设备连接检查以及重连
+		void checkDeviceConn();
+		//获取所有设备数据
+		std::vector<ModbusTcpDevice> getAllDeviceData();
+		//更新设备数据
+		void updateDeviceData(ModbusTcpDevice& modbusTcpDevice);
+		//获取当个设备数据
+		ModbusTcpDevice getDeviceData(int did);
+		//获取单个设备单个字段数据
+		template<typename T>
+		T getDeviceFieldData(int did, int field);
 		//读寄存器
-		bool readRegister(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf);
+		bool readRegister(ModbusTcpDevice& modbusTcpDevice, CollectionField& collectionField);
 		//写寄存器
 		bool writeRegister(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf);
 		//读线圈
@@ -193,10 +314,17 @@ namespace ModbusTcp {
 		//写线圈
 		bool writeCoil(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf);
 		//寄存缓冲区解析
-		bool parseRegisterBuf(char* buff, RegisterBuf& registerBuf);
+		bool parseRegisterBuf(char* buff, CollectionField& collectionField);
 		//线圈缓冲区解析
 		bool parseCoilBuf(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf);
+		//
 	};
+
+	template<typename T>
+	inline T ModbusTcp::getDeviceFieldData(int did, int field)
+	{
+		return T();
+	}
 
 }
 #endif // !MODBUSTCP_H
