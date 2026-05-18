@@ -397,15 +397,48 @@ void DeviceCollect::PrintModbusDevices()
         std::cout << "=======================" << std::endl;
         std::cout << "ip：" << modbusDevice.ip << std::endl;
         std::cout << "port：" << modbusDevice.port << std::endl;
+        std::cout << "连接状态:" << (modbusDevice.connStatu ? "在线" : "离线") << std::endl;
+        std::cout << "sock:" << modbusDevice.sock << std::endl;
         for (auto modbusFiled : modbusDevice.CollectionFields) {
             std::cout << "=========监听字段========" << std::endl;
             std::cout << "地址位：" << modbusFiled.fieldAddress<< std::endl;
             std::cout << "readOnly：" << modbusFiled.readOnly << std::endl;
             std::cout << "registerLen：" << modbusFiled.registerLen << std::endl;
+            PrintCollectionField(modbusFiled);
         }
         std::cout  << std::endl;
         std::cout  << std::endl;
     }
+}
+void DeviceCollect::PrintCollectionField(ModbusTcp::CollectionField collectionField)
+{
+    switch (collectionField.buffType)
+    {
+        case ModbusTcp::BuffType::D_UINT8:
+            std::cout<<"字段值为："<< collectionField.uint8Data<<std::endl;
+            break;
+        case ModbusTcp::BuffType::D_UINT16:
+            std::cout<<"字段值为："<< collectionField.uint16Data<<std::endl;
+            break;
+        case ModbusTcp::BuffType::D_UINT32:
+            std::cout<<"字段值为："<< collectionField.uint32Data<<std::endl;
+            break;
+        case ModbusTcp::BuffType::D_INT16:
+            std::cout<<"字段值为："<< collectionField.int16Data<<std::endl;
+            break;
+        case ModbusTcp::BuffType::D_INT32:
+            std::cout << "字段值为：" << collectionField.int32Data << std::endl;
+            break;
+        case ModbusTcp::BuffType::D_FLOAT:
+            std::cout<<"字段值为："<< collectionField.floatData << std::endl;
+            break;
+        default:
+            break;
+    }
+}
+void DeviceCollect::StartCollection()
+{
+    ModbusTcpDevices.timerTask();
 }
 bool DeviceCollect::LoadDeviceData()
 {

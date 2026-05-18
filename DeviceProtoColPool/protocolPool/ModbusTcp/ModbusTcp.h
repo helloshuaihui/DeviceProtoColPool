@@ -1,6 +1,7 @@
 ﻿#pragma once
 #ifndef MODBUSTCP_H 
 #define MODBUSTCP_H
+#include <unordered_map>
 #include "../TCP/TcpSocketClass.h"
 #include "../TOOL/ThreadPool.h"
 namespace ModbusTcp {
@@ -255,6 +256,7 @@ namespace ModbusTcp {
 		TCPSOCK sock = 0;				// 设备socket
 		std::string ip;                 // 设备IP地址
 		int32_t port = 0;               // 设备端口号
+		uint16_t slaveId = 1;           // 从站地址/从站ID，默认1
 		std::string errMsg;				//错误信息
 		std::vector<CollectionField> CollectionFields;
 	};
@@ -281,6 +283,8 @@ namespace ModbusTcp {
 		std::vector<ModbusTcpDevice> GetAllDevices();
 		//初始化设备连接
 		void initDeviceConn();
+		//定时任务
+		void timerTask();
 	private:
 		//modbus设备列表
 		std::vector<ModbusTcpDevice> modbusTcpDevices;
@@ -292,14 +296,19 @@ namespace ModbusTcp {
 		std::mutex deviceMutex;
 		//数据锁操作
 		std::mutex dataMutex;
-		//定时任务
-		void timerTask();
+		//事务ID计数器
+		std::atomic<uint16_t> transactionId{1};
+		//获取下一个事务ID（线程安全）
+		uint16_t getNextTransactionId();
+		//事务ID到字段的映射（用于多线程响应匹配）
+		std::mutex transactionMutex;
+		std::unordered_map<uint16_t, std::pair<ModbusTcpDevice*, CollectionField*>> transactionMap;
 		//设备连接检查以及重连
 		void checkDeviceConn();
 		//获取所有设备数据
 		std::vector<ModbusTcpDevice> getAllDeviceData();
 		//更新设备数据
-		void updateDeviceData(ModbusTcpDevice& modbusTcpDevice);
+		void updateDeviceData();
 		//获取当个设备数据
 		ModbusTcpDevice getDeviceData(int did);
 		//获取单个设备单个字段数据
@@ -317,7 +326,6 @@ namespace ModbusTcp {
 		bool parseRegisterBuf(char* buff, CollectionField& collectionField);
 		//线圈缓冲区解析
 		bool parseCoilBuf(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf);
-		//
 	};
 
 	template<typename T>

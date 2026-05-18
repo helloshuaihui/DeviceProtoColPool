@@ -1,12 +1,22 @@
-#include "ModbusTcp.h" 
+﻿#include "ModbusTcp.h" 
 namespace ModbusTcp {
 	ModbusTcp::ModbusTcp()
 	{
 	}
 
 	ModbusTcp::~ModbusTcp()
-	{
+	{}
+	
+	// 获取下一个事务ID，线程安全，从1递增到65535后回绕到0再继续递增
+	uint16_t ModbusTcp::getNextTransactionId() {
+		uint16_t current = transactionId.fetch_add(1);
+		if (current == 65535) {
+			transactionId.store(0);
+			return 65535;
+		}
+		return current;
 	}
+	
     bool ModbusTcp::addDevice(ModbusTcpDevice &modbusTcpDevice)
     {
         std::lock_guard<std::mutex> lock(deviceMutex);
@@ -41,32 +51,51 @@ namespace ModbusTcp {
             this->isInitThreadPool = true;
         }
         std::lock_guard<std::mutex> lock(deviceMutex);
-        for (auto &device:this->modbusTcpDevices) {
-            this->tPool->submit([&device, this]()->void {
-                TCPSOCK sock = this->connTcpScokerServer(device.ip, device.port,this->MaxConnectionTime);
-                if (!sock > 0) { device.errMsg = "Failed to connect to Modbus TCP"; return; }
-                device.sock = sock;
-                device.status = true;
+        for (size_t i = 0; i < this->modbusTcpDevices.size(); ++i) {
+            size_t index = i;
+            this->tPool->submit([this, index]()->void {
+                TCPSOCK sock = this->connTcpScokerServer(this->modbusTcpDevices[index].ip, this->modbusTcpDevices[index].port, this->MaxConnectionTime);
+                if (sock <= 0) { 
+                    std::lock_guard<std::mutex> lock(this->deviceMutex);
+                    this->modbusTcpDevices[index].errMsg = "Failed to connect to Modbus TCP"; 
+                    return; 
+                }
+                std::lock_guard<std::mutex> lock(this->deviceMutex);
+                this->modbusTcpDevices[index].sock = sock; 
+                this->modbusTcpDevices[index].connStatu = true;
             });
         }
     }
     void ModbusTcp::timerTask()
     {
+        tPool->submit([this]() -> void {
+            while (true)
+            {
+                Sleep(1000);
+                updateDeviceData();
+            }
+        });
     }
     void ModbusTcp::checkDeviceConn()
     {
-        for (auto &device:this->modbusTcpDevices) {
-            if(device.status){
+        std::lock_guard<std::mutex> lock(deviceMutex);
+        for (size_t i = 0; i < this->modbusTcpDevices.size(); ++i) {
+            if(this->modbusTcpDevices[i].connStatu){
                 continue;
             }else{
                 if(this->isReconnect){
-                    this->tPool->submit([&device, this]()->void {
-                        TCPSOCK sock = this->connTcpScokerServer(device.ip, device.port,this->MaxConnectionTime);
-                        if (!sock > 0) { device.errMsg = "Failed to connect to Modbus TCP"; return; }
-                        std::lock_guard<std::mutex> lock(deviceMutex);
-                        device.sock = sock;
-                        device.errMsg = "Connected successfully";
-                        device.status = true;
+                    size_t index = i;
+                    this->tPool->submit([this, index]()->void {
+                        TCPSOCK sock = this->connTcpScokerServer(this->modbusTcpDevices[index].ip, this->modbusTcpDevices[index].port, this->MaxConnectionTime);
+                        if (sock <= 0) { 
+                            std::lock_guard<std::mutex> lock(this->deviceMutex);
+                            this->modbusTcpDevices[index].errMsg = "Failed to connect to Modbus TCP"; 
+                            return; 
+                        }
+                        std::lock_guard<std::mutex> lock(this->deviceMutex);
+                        this->modbusTcpDevices[index].sock = sock;
+                        this->modbusTcpDevices[index].errMsg = "Connected successfully";
+                        this->modbusTcpDevices[index].connStatu = true;
                     });
                 }
             }
@@ -76,14 +105,36 @@ namespace ModbusTcp {
     {
         return std::vector<ModbusTcpDevice>();
     }
-    void ModbusTcp::updateDeviceData(ModbusTcpDevice &modbusTcpDevice)
+    void ModbusTcp::updateDeviceData()
     {
-        for(auto &device:this->modbusTcpDevices){
-            for(auto &registerBuf:device.CollectionFields){
-                this->tPool->submit([&device, &registerBuf, this]()->void {
-                    this->readRegister(device, registerBuf);
-                });
-            }
+        // 为每个设备创建一个任务，顺序读取所有字段
+        for (size_t i = 0; i < this->modbusTcpDevices.size(); ++i) {
+            size_t deviceIndex = i;
+            this->tPool->submit([this, deviceIndex]()->void {
+                while (true) {
+                    {
+                        std::lock_guard<std::mutex> lock(this->deviceMutex);
+                        
+                        // 检查设备是否有效且在线
+                        if (deviceIndex >= this->modbusTcpDevices.size() || !this->modbusTcpDevices[deviceIndex].connStatu) {
+                            return;
+                        }
+                        
+                        ModbusTcpDevice& device = this->modbusTcpDevices[deviceIndex];
+                        
+                        // 顺序读取该设备的所有字段
+                        for (auto& field : device.CollectionFields) {
+                            if (!device.connStatu) {
+                                break;
+                            }
+                            this->readRegister(device, field);
+                        }
+                    } // 锁在这里自动释放
+                    
+                    // 在锁外等待采集间隔
+                    Sleep(this->CollectionInterval);
+                }
+            });
         }
     }
     ModbusTcpDevice ModbusTcp::getDeviceData(int did)
@@ -95,22 +146,29 @@ namespace ModbusTcp {
     {
         //构建请求 
         char headBuf[13] = { 0 };
-        headBuf[0] = 0x00;
-        headBuf[1] = 0x01;
+        uint16_t transId = getNextTransactionId();
+        headBuf[0] = (transId >> 8) & 0xFF;  // 事务ID高字节
+        headBuf[1] = transId & 0xFF;         // 事务ID低字节
         headBuf[2] = 0x00;
         headBuf[3] = 0x00;
+        // 长度字段：从站地址(1) + 功能码(1) + 寄存器地址(2) + 寄存器数量(2) = 6字节
         headBuf[4] = 0x00;
         headBuf[5] = 0x06;
-        headBuf[6] = 0x01;
+        headBuf[6] = modbusTcpDevice.slaveId & 0xFF;  // 使用设备配置的从站ID
         headBuf[7] = 0x03;
         uint16_t addr = collectionField.fieldAddress;
         headBuf[8] = (addr >> 8) & 0xFF;
         headBuf[9] = addr & 0xFF;
-        uint16_t rlen = collectionField.registerLen;
-        headBuf[10] = (rlen >> 8) & 0xFF;
-        headBuf[11] = rlen & 0xFF;
+        // registerLen 是字节数，每个寄存器2字节，所以寄存器数量 = registerLen / 2
+        uint16_t registerCount = collectionField.registerLen / 2;
+        headBuf[10] = (registerCount >> 8) & 0xFF;
+        headBuf[11] = registerCount & 0xFF;
+        
 		int slen=send(modbusTcpDevice.sock, headBuf, 12, 0);
 		if(slen<=0){
+            // 修改设备状态（外部已加锁保护）
+            modbusTcpDevice.sock = 0;
+            modbusTcpDevice.connStatu = false;
             modbusTcpDevice.errMsg = "Message sending failed";
 			return false;
 		}else{
@@ -118,14 +176,29 @@ namespace ModbusTcp {
 			char recvBuf[100] = { 0 };
 			int recvLen=recv(modbusTcpDevice.sock, recvBuf, 100, 0);
 			if(recvLen<=0){
+                // 修改设备状态（外部已加锁保护）
                 modbusTcpDevice.sock = 0;
+                modbusTcpDevice.connStatu = false;
                 modbusTcpDevice.errMsg = "Message reception failed, connection has been disconnected";
 				return false;
 			}
-			//解析响应
-			parseRegisterBuf(recvBuf, collectionField);
+            
+            // 检查响应中的功能码是否正常（正常为0x03，异常为0x83）
+            if (recvBuf[7] != 0x03) {
+                if (recvBuf[7] == 0x83) {
+                    // 异常响应
+                    uint8_t exceptionCode = recvBuf[8];
+                    modbusTcpDevice.errMsg = "Modbus exception response, code: " + std::to_string(exceptionCode);
+                } else {
+                    modbusTcpDevice.errMsg = "Unexpected function code in response: " + std::to_string(recvBuf[7]);
+                }
+                return false;
+            }
+            
+            // 直接解析响应到当前字段（因为每个设备只有一个线程顺序处理）
+            parseRegisterBuf(recvBuf, collectionField);
             modbusTcpDevice.errMsg = "Data received successfully";
-			return true;
+            return true;
 		}
         return false;
     }
@@ -419,7 +492,6 @@ namespace ModbusTcp {
         }
         else if (collectionField.buffType == BuffType::D_UINT16 || collectionField.buffType == BuffType::D_INT16) {
             dataBitLen = 2;
-
             int len = buff[8] / dataBitLen;
             for (int i = 0; i < len * 2; i += 2) {
                 uint16_t bufData;
@@ -439,8 +511,8 @@ namespace ModbusTcp {
                     collectionField.setData(bufData);
                 }
                 else {
-                    int16_t int16Data = *reinterpret_cast<int16_t*>(&bufData);
-                    collectionField.setData(bufData);
+                    int16_t int16Data = static_cast<int16_t>(bufData);
+                    collectionField.setData(int16Data);
                 }
             }
         }
@@ -454,6 +526,7 @@ namespace ModbusTcp {
                 case ByteSequence::ABCD:
                     bufData = ((buff[9 + i] & 0xFF) << 24) | ((buff[9 + i + 1] & 0xFF) << 16) |
                         ((buff[9 + i + 2] & 0xFF) << 8) | (buff[9 + i + 3] & 0xFF);
+                    
                     break;
                 case ByteSequence::BADC:
                     bufData = ((buff[9 + i + 1] & 0xFF) << 24) | ((buff[9 + i] & 0xFF) << 16) |
@@ -476,11 +549,17 @@ namespace ModbusTcp {
                 case BuffType::D_FLOAT:
                     float floatData; //转换成小数存储
                     memcpy(&floatData, &bufData, sizeof(floatData));
-                    collectionField.setData(bufData);
+                    collectionField.setData(floatData);
                     break;
-                default: //BuffType::INT32
+                case BuffType::D_INT64:
+                    collectionField.setData(static_cast<uint64_t>(bufData));
+                    break;
+                case BuffType::D_UINT64:
+                    collectionField.setData(static_cast<uint64_t>(bufData));
+                    break;
+                default: //BuffType::D_INT32
                     int32_t int32Data = static_cast<int32_t>(bufData);
-                    collectionField.setData(bufData);
+                    collectionField.setData(int32Data);
                     break;
                 }
             }

@@ -87,7 +87,7 @@ struct CollectionField {
     int32_t id = 0;                 // 字段ID
     int32_t did = 0;                // 关联设备ID
     std::string fieldName;      // 字段名
-    std::string fieldAddress;   // 寄存器地址
+    int fieldAddress;   // 寄存器地址
     std::string fieldValueType; // 值类型
     int32_t readOnly = 0;           // 是否只读 1是 0否
     std::string endianness;     // 字节序（Modbus使用）
@@ -132,6 +132,10 @@ public:
     void PrintAllDevices();
     //打印modbus协议
     void PrintModbusDevices();
+    //打印字段获取到的值
+    void PrintCollectionField(ModbusTcp::CollectionField collectionField);
+    //启动采集
+    void StartCollection();
 private:
     //协议类型列表
     std::vector<ProtocolType> ProtocolTypes;

@@ -121,8 +121,12 @@ int main()
         return -1;
     }
     test.PrintAllDevices();
-    test.PrintModbusDevices();
-    
+    test.StartCollection();
+    while (true)
+    {
+        Sleep(1000);
+        test.PrintModbusDevices();
+    }
     //线程调用
     //int i = 0;
     //TOOL::ThreadPool tp(6,1000);
