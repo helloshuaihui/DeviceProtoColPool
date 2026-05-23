@@ -71,8 +71,10 @@ namespace ModbusTcp {
         tPool->submit([this]() -> void {
             while (true)
             {
-                Sleep(1000);
-                updateDeviceData();
+                if (this->isTimedCollection) {
+                    Sleep(this->CollectionInterval);
+                    updateDeviceData();
+                }
             }
         });
     }
@@ -111,35 +113,31 @@ namespace ModbusTcp {
         for (size_t i = 0; i < this->modbusTcpDevices.size(); ++i) {
             size_t deviceIndex = i;
             this->tPool->submit([this, deviceIndex]()->void {
-                while (true) {
-                    {
-                        std::lock_guard<std::mutex> lock(this->deviceMutex);
-                        
-                        // 检查设备是否有效且在线
-                        if (deviceIndex >= this->modbusTcpDevices.size() || !this->modbusTcpDevices[deviceIndex].connStatu) {
-                            return;
+                {
+                    std::lock_guard<std::mutex> lock(this->deviceMutex);
+                    // 检查设备是否有效且在线
+                    if (deviceIndex >= this->modbusTcpDevices.size() || !this->modbusTcpDevices[deviceIndex].connStatu) {
+                        return;
+                    }
+                    ModbusTcpDevice& device = this->modbusTcpDevices[deviceIndex];
+                    // 顺序读取该设备的所有字段
+                    for (auto& field : device.CollectionFields) {
+                        if (!device.connStatu) {
+                            break;
                         }
-                        
-                        ModbusTcpDevice& device = this->modbusTcpDevices[deviceIndex];
-                        
-                        // 顺序读取该设备的所有字段
-                        for (auto& field : device.CollectionFields) {
-                            if (!device.connStatu) {
-                                break;
-                            }
-                            this->readRegister(device, field);
-                        }
-                    } // 锁在这里自动释放
-                    
-                    // 在锁外等待采集间隔
-                    Sleep(this->CollectionInterval);
-                }
+                        this->readRegister(device, field);
+                    }
+                } // 锁在这里自动释放
             });
         }
     }
     ModbusTcpDevice ModbusTcp::getDeviceData(int did)
     {
-        return ModbusTcpDevice();
+        for (int i = 0; i < modbusTcpDevices.size();i++) {
+            if (modbusTcpDevices[i].id=did) {
+                return modbusTcpDevices[i];
+            }
+        }
     }
     // 读寄存器
     bool ModbusTcp::readRegister(ModbusTcpDevice& modbusTcpDevice, CollectionField& collectionField)
@@ -203,12 +201,12 @@ namespace ModbusTcp {
         return false;
     }
     //写寄存器
-    bool ModbusTcp::writeRegister(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf)
+    bool ModbusTcp::writeRegister(ModbusTcpDevice& modbusTcpDevice, CollectionField& collectionField)
     {
-        if (modbusTcpInfo.sock <= 0) {
-            TCPSOCK sock = this->connTcpScokerServer(modbusTcpInfo.ip, modbusTcpInfo.port);
+        if (modbusTcpDevice.sock <= 0) {
+            TCPSOCK sock = this->connTcpScokerServer(modbusTcpDevice.ip, modbusTcpDevice.port);
             if (sock <= 0) { return false; }
-            modbusTcpInfo.sock = sock;
+            modbusTcpDevice.sock = sock;
         }
 
         // 发送缓冲区
@@ -220,25 +218,25 @@ namespace ModbusTcp {
         sendBuf[2] = 0x00;
         sendBuf[3] = 0x00;
         sendBuf[6] = 0x01;
-        if (registerBuf.buffType == BuffType::D_UINT16 ||
-            registerBuf.buffType == BuffType::D_INT16 ||
-            registerBuf.buffType == BuffType::D_UINT8)
+        if (collectionField.buffType == BuffType::D_UINT16 ||
+            collectionField.buffType == BuffType::D_INT16 ||
+            collectionField.buffType == BuffType::D_UINT8)
         {
             sendBuf[7] = 0x06;                
             sendBuf[4] = 0x00;
             sendBuf[5] = 0x06;    
 
             // 地址
-            uint16_t addr = registerBuf.address;
+            uint16_t addr = collectionField.fieldAddress;
             sendBuf[8] = (addr >> 8) & 0xFF;
             sendBuf[9] = addr & 0xFF;
             // 取值
             uint16_t val = 0;
-            if (registerBuf.buffType == BuffType::D_UINT16) val = registerBuf.uint16Buf;
-            else if (registerBuf.buffType == BuffType::D_INT16) val = (uint16_t)registerBuf.int16Buf;
-            else if (registerBuf.buffType == BuffType::D_UINT8) val = registerBuf.uint8Buf;
+            if (collectionField.buffType == BuffType::D_UINT16) val = collectionField.uint16Data;
+            else if (collectionField.buffType == BuffType::D_INT16) val = (uint16_t)collectionField.int16Data;
+            else if (collectionField.buffType == BuffType::D_UINT8) val = collectionField.uint8Data;
             // 字节序
-            if (registerBuf.byteSequence == ByteSequence::BADC) {
+            if (collectionField.byteSequence == ByteSequence::BADC) {
                 sendBuf[10] = val & 0xFF;
                 sendBuf[11] = (val >> 8) & 0xFF;
             }
@@ -249,30 +247,30 @@ namespace ModbusTcp {
 
             sendLen = 12;
         }
-        else if (registerBuf.buffType == BuffType::D_UINT32 ||
-            registerBuf.buffType == BuffType::D_INT32 ||
-            registerBuf.buffType == BuffType::D_FLOAT)
+        else if (collectionField.buffType == BuffType::D_UINT32 ||
+            collectionField.buffType == BuffType::D_INT32 ||
+            collectionField.buffType == BuffType::D_FLOAT)
         {
             sendBuf[7] = 0x10;                // 功能码：写多个
             sendBuf[4] = 0x00;
             sendBuf[5] = 0x0B;                // 长度 = 11
             // 地址
-            uint16_t addr = registerBuf.address;
+            uint16_t addr = collectionField.fieldAddress;
             sendBuf[8] = (addr >> 8) & 0xFF;
             sendBuf[9] = addr & 0xFF;
             sendBuf[10] = 0x00;
             sendBuf[11] = 0x02;
             sendBuf[12] = 0x04;
             uint32_t val32 = 0;
-            if (registerBuf.buffType == BuffType::D_UINT32)      val32 = registerBuf.uint32Buf;
-            else if (registerBuf.buffType == BuffType::D_INT32)  val32 = (uint32_t)registerBuf.int32Buf;
-            else if (registerBuf.buffType == BuffType::D_FLOAT)  memcpy(&val32, &registerBuf.floatBuf, 4);
+            if (collectionField.buffType == BuffType::D_UINT32)      val32 = collectionField.uint32Data;
+            else if (collectionField.buffType == BuffType::D_INT32)  val32 = (uint32_t)collectionField.int32Data;
+            else if (collectionField.buffType == BuffType::D_FLOAT)  memcpy(&val32, &collectionField.floatData, 4);
             uint8_t b0 = (val32 >> 24) & 0xFF;
             uint8_t b1 = (val32 >> 16) & 0xFF;
             uint8_t b2 = (val32 >> 8) & 0xFF;
             uint8_t b3 = val32 & 0xFF;
 
-            switch (registerBuf.byteSequence)
+            switch (collectionField.byteSequence)
             {
             case ByteSequence::ABCD: sendBuf[13] = b0; sendBuf[14] = b1; sendBuf[15] = b2; sendBuf[16] = b3; break;
             case ByteSequence::BADC: sendBuf[13] = b1; sendBuf[14] = b0; sendBuf[15] = b3; sendBuf[16] = b2; break;
@@ -282,16 +280,16 @@ namespace ModbusTcp {
             }
             sendLen = 17;
         }
-        int slen = send(modbusTcpInfo.sock, (char*)sendBuf, sendLen, 0);
+        int slen = send(modbusTcpDevice.sock, (char*)sendBuf, sendLen, 0);
         if (slen <= 0) {
-            modbusTcpInfo.sock = 0;
+            modbusTcpDevice.sock = 0;
             return false;
         }
         uint8_t recvBuf[50] = { 0 };
-        int recvLen = recv(modbusTcpInfo.sock, (char*)recvBuf, 50, 0);
+        int recvLen = recv(modbusTcpDevice.sock, (char*)recvBuf, 50, 0);
 
         if (recvLen <= 0) {
-            modbusTcpInfo.sock = 0;
+            modbusTcpDevice.sock = 0;
             return false;
         }
         if (recvBuf[7] == sendBuf[7]) {
@@ -300,12 +298,12 @@ namespace ModbusTcp {
         return false;
     }
     //读线圈
-    bool ModbusTcp::readCoil(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf)
+    bool ModbusTcp::readCoil(ModbusTcpDevice& modbusTcpDevice, CollectionField& collectionField)
     {
-        if (modbusTcpInfo.sock <= 0) {
-            TCPSOCK sock=this->connTcpScokerServer(modbusTcpInfo.ip, modbusTcpInfo.port);
+        if (modbusTcpDevice.sock <= 0) {
+            TCPSOCK sock=this->connTcpScokerServer(modbusTcpDevice.ip, modbusTcpDevice.port);
             if (sock <= 0) { return false; }
-            modbusTcpInfo.sock = sock;
+            modbusTcpDevice.sock = sock;
 
         }
         //构建请求 
@@ -318,23 +316,23 @@ namespace ModbusTcp {
         headBuf[5] = 0x06;
         headBuf[6] = 0x01;
         headBuf[7] = 0x01; // 读线圈功能码
-        uint16_t addr = registerBuf.address;
+        uint16_t addr = collectionField.fieldAddress;
         headBuf[8] = (addr >> 8) & 0xFF;
         headBuf[9] = addr & 0xFF;
-        uint16_t rlen = registerBuf.registerLen;
+        uint16_t rlen = collectionField.registerLen;
         headBuf[10] = (rlen >> 8) & 0xFF;
         headBuf[11] = rlen & 0xFF;
         
-        int slen=send(modbusTcpInfo.sock, headBuf, 12, 0);
+        int slen=send(modbusTcpDevice.sock, headBuf, 12, 0);
         if(slen<=0){
-            modbusTcpInfo.sock = 0;
+            modbusTcpDevice.sock = 0;
             return false;
         }else{
             //接收响应
             char recvBuf[100] = { 0 };
-            int recvLen=recv(modbusTcpInfo.sock, recvBuf, 100, 0);
+            int recvLen=recv(modbusTcpDevice.sock, recvBuf, 100, 0);
             if(recvLen<=0){
-                modbusTcpInfo.sock = 0;
+                modbusTcpDevice.sock = 0;
                 return false;
             }
             //解析响应
@@ -352,11 +350,11 @@ namespace ModbusTcp {
             int byteCount = recvBuf[8];
             if (byteCount > 0) {
                 // 对于单个线圈，只取第一个字节的最低位
-                if (registerBuf.registerLen == 1) {
-                    registerBuf.uint8Buf = (recvBuf[9] & 0x01) ? 1 : 0;
+                if (collectionField.registerLen == 1) {
+                    collectionField.uint8Data = (recvBuf[9] & 0x01) ? 1 : 0;
                 } else {
                     // 对于多个线圈，可以根据需要扩展解析逻辑
-                    registerBuf.uint8Buf = (recvBuf[9] & 0x01) ? 1 : 0;
+                    collectionField.uint8Data = (recvBuf[9] & 0x01) ? 1 : 0;
                 }
             }
             return true;
@@ -364,16 +362,16 @@ namespace ModbusTcp {
         return false;
     }
     //写线圈
-    bool ModbusTcp::writeCoil(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf)
+    bool ModbusTcp::writeCoil(ModbusTcpDevice& modbusTcpDevice, CollectionField& collectionField)
     {
-        if (modbusTcpInfo.sock <= 0) {
-            TCPSOCK sock=this->connTcpScokerServer(modbusTcpInfo.ip, modbusTcpInfo.port);
+        if (modbusTcpDevice.sock <= 0) {
+            TCPSOCK sock=this->connTcpScokerServer(modbusTcpDevice.ip, modbusTcpDevice.port);
             if (sock <= 0) { return false; }
-            modbusTcpInfo.sock = sock;
+            modbusTcpDevice.sock = sock;
 
         }
         
-        if (registerBuf.registerLen == 1) {
+        if (collectionField.registerLen == 1) {
             // 写单个线圈，使用功能码0x05
             char headBuf[12] = { 0 };
             headBuf[0] = 0x00;
@@ -384,24 +382,24 @@ namespace ModbusTcp {
             headBuf[5] = 0x06;
             headBuf[6] = 0x01;
             headBuf[7] = 0x05; // 写单个线圈功能码
-            uint16_t addr = registerBuf.address;
+            uint16_t addr = collectionField.fieldAddress;
             headBuf[8] = (addr >> 8) & 0xFF;
             headBuf[9] = addr & 0xFF;
             // 线圈状态：0xFF00为ON，0x0000为OFF
-            uint16_t state = registerBuf.uint8Buf ? 0xFF00 : 0x0000;
+            uint16_t state = collectionField.uint8Data ? 0xFF00 : 0x0000;
             headBuf[10] = (state >> 8) & 0xFF;
             headBuf[11] = state & 0xFF;
             
-            int slen=send(modbusTcpInfo.sock, headBuf, 12, 0);
+            int slen=send(modbusTcpDevice.sock, headBuf, 12, 0);
             if(slen<=0){
-                modbusTcpInfo.sock = 0;
+                modbusTcpDevice.sock = 0;
                 return false;
             }else{
                 //接收响应
                 char recvBuf[100] = { 0 };
-                int recvLen=recv(modbusTcpInfo.sock, recvBuf, 100, 0);
+                int recvLen=recv(modbusTcpDevice.sock, recvBuf, 100, 0);
                 if(recvLen<=0){
-                    modbusTcpInfo.sock = 0;
+                    modbusTcpDevice.sock = 0;
                     return false;
                 }
                 // 验证响应
@@ -423,7 +421,7 @@ namespace ModbusTcp {
             }
         } else {
             // 写多个线圈，使用功能码0x0F
-            int byteCount = (registerBuf.registerLen + 7) / 8;
+            int byteCount = (collectionField.registerLen + 7) / 8;
             char headBuf[256] = { 0 };
             headBuf[0] = 0x00;
             headBuf[1] = 0x01;
@@ -433,29 +431,29 @@ namespace ModbusTcp {
             headBuf[5] = 0x07 + byteCount; // 长度
             headBuf[6] = 0x01;
             headBuf[7] = 0x0F; // 写多个线圈功能码
-            uint16_t addr = registerBuf.address;
+            uint16_t addr = collectionField.fieldAddress;
             headBuf[8] = (addr >> 8) & 0xFF;
             headBuf[9] = addr & 0xFF;
-            uint16_t count = registerBuf.registerLen;
+            uint16_t count = collectionField.registerLen;
             headBuf[10] = (count >> 8) & 0xFF;
             headBuf[11] = count & 0xFF;
             headBuf[12] = byteCount; // 字节数
             
             // 这里简化处理，只设置第一个线圈的状态
             // 实际应用中需要根据具体需求设置多个线圈的状态
-            headBuf[13] = registerBuf.uint8Buf ? 0x01 : 0x00;
+            headBuf[13] = collectionField.uint8Data ? 0x01 : 0x00;
             
             int sendLen = 13 + byteCount;
-            int slen=send(modbusTcpInfo.sock, headBuf, sendLen, 0);
+            int slen=send(modbusTcpDevice.sock, headBuf, sendLen, 0);
             if(slen<=0){
-                modbusTcpInfo.sock = 0;
+                modbusTcpDevice.sock = 0;
                 return false;
             }else{
                 //接收响应
                 char recvBuf[100] = { 0 };
-                int recvLen=recv(modbusTcpInfo.sock, recvBuf, 100, 0);
+                int recvLen=recv(modbusTcpDevice.sock, recvBuf, 100, 0);
                 if(recvLen<=0){
-                    modbusTcpInfo.sock = 0;
+                    modbusTcpDevice.sock = 0;
                     return false;
                 }
                 // 验证响应
@@ -481,18 +479,15 @@ namespace ModbusTcp {
 	//解析读寄存器
     bool ModbusTcp::parseRegisterBuf(char* buff, CollectionField& collectionField)
 	{
-		int dataBitLen = 1;
-        if(collectionField.buffType == BuffType::D_UINT8) {
-            dataBitLen = 1;
-            int len = buff[8] / dataBitLen;
+		if(collectionField.buffType == BuffType::D_UINT8) {
+            int len = buff[8];
             for (int i = 0; i < len; i++) {
                 char bufData = buff[9 + i];
-                collectionField.setData(bufData);
+                collectionField.uint8Data = bufData;
             }
         }
         else if (collectionField.buffType == BuffType::D_UINT16 || collectionField.buffType == BuffType::D_INT16) {
-            dataBitLen = 2;
-            int len = buff[8] / dataBitLen;
+            int len = buff[8] / 2;
             for (int i = 0; i < len * 2; i += 2) {
                 uint16_t bufData;
                 switch (collectionField.byteSequence)
@@ -508,17 +503,17 @@ namespace ModbusTcp {
                     break;
                 }
                 if (collectionField.buffType == BuffType::D_UINT16) {
-                    collectionField.setData(bufData);
+                    collectionField.uint16Data = (bufData);
                 }
                 else {
                     int16_t int16Data = static_cast<int16_t>(bufData);
-                    collectionField.setData(int16Data);
+                    collectionField.int16Data = (int16Data);
                 }
             }
         }
-        else {
-            dataBitLen = 4;
-            int len = buff[8] / dataBitLen;
+        else if (collectionField.buffType == BuffType::D_UINT32 || collectionField.buffType == BuffType::D_INT32 || 
+                 collectionField.buffType == BuffType::D_FLOAT) {
+            int len = buff[8] / 4;
             for (int i = 0; i < len * 4; i += 4) {
                 uint32_t bufData = 0;
                 switch (collectionField.byteSequence)
@@ -526,7 +521,6 @@ namespace ModbusTcp {
                 case ByteSequence::ABCD:
                     bufData = ((buff[9 + i] & 0xFF) << 24) | ((buff[9 + i + 1] & 0xFF) << 16) |
                         ((buff[9 + i + 2] & 0xFF) << 8) | (buff[9 + i + 3] & 0xFF);
-                    
                     break;
                 case ByteSequence::BADC:
                     bufData = ((buff[9 + i + 1] & 0xFF) << 24) | ((buff[9 + i] & 0xFF) << 16) |
@@ -544,30 +538,100 @@ namespace ModbusTcp {
                 switch (collectionField.buffType)
                 {
                 case BuffType::D_UINT32:
-                    collectionField.setData(bufData);
+                    collectionField.uint32Data = (bufData);
                     break;
                 case BuffType::D_FLOAT:
-                    float floatData; //转换成小数存储
+                {
+                    float floatData;
                     memcpy(&floatData, &bufData, sizeof(floatData));
-                    collectionField.setData(floatData);
-                    break;
-                case BuffType::D_INT64:
-                    collectionField.setData(static_cast<uint64_t>(bufData));
-                    break;
-                case BuffType::D_UINT64:
-                    collectionField.setData(static_cast<uint64_t>(bufData));
+                    collectionField.floatData = (floatData);
+                }
                     break;
                 default: //BuffType::D_INT32
                     int32_t int32Data = static_cast<int32_t>(bufData);
-                    collectionField.setData(int32Data);
+                    collectionField.int32Data = (int32Data);
                     break;
                 }
             }
         }
+        else if (collectionField.buffType == BuffType::D_UINT64 || collectionField.buffType == BuffType::D_INT64) {
+            int len = buff[8] / 8;
+            for (int i = 0; i < len * 8; i += 8) {
+                uint64_t bufData = 0;
+                switch (collectionField.byteSequence)
+                {
+                case ByteSequence::ABCD:
+                    bufData = ((static_cast<uint64_t>(buff[9 + i] & 0xFF) << 56) |
+                               (static_cast<uint64_t>(buff[9 + i + 1] & 0xFF) << 48) |
+                               (static_cast<uint64_t>(buff[9 + i + 2] & 0xFF) << 40) |
+                               (static_cast<uint64_t>(buff[9 + i + 3] & 0xFF) << 32) |
+                               (static_cast<uint64_t>(buff[9 + i + 4] & 0xFF) << 24) |
+                               (static_cast<uint64_t>(buff[9 + i + 5] & 0xFF) << 16) |
+                               (static_cast<uint64_t>(buff[9 + i + 6] & 0xFF) << 8) |
+                               (static_cast<uint64_t>(buff[9 + i + 7] & 0xFF)));
+                    break;
+                case ByteSequence::BADC:
+                    bufData = ((static_cast<uint64_t>(buff[9 + i + 1] & 0xFF) << 56) |
+                               (static_cast<uint64_t>(buff[9 + i] & 0xFF) << 48) |
+                               (static_cast<uint64_t>(buff[9 + i + 3] & 0xFF) << 40) |
+                               (static_cast<uint64_t>(buff[9 + i + 2] & 0xFF) << 32) |
+                               (static_cast<uint64_t>(buff[9 + i + 5] & 0xFF) << 24) |
+                               (static_cast<uint64_t>(buff[9 + i + 4] & 0xFF) << 16) |
+                               (static_cast<uint64_t>(buff[9 + i + 7] & 0xFF) << 8) |
+                               (static_cast<uint64_t>(buff[9 + i + 6] & 0xFF)));
+                    break;
+                case ByteSequence::CDAB:
+                    bufData = ((static_cast<uint64_t>(buff[9 + i + 2] & 0xFF) << 56) |
+                               (static_cast<uint64_t>(buff[9 + i + 3] & 0xFF) << 48) |
+                               (static_cast<uint64_t>(buff[9 + i] & 0xFF) << 40) |
+                               (static_cast<uint64_t>(buff[9 + i + 1] & 0xFF) << 32) |
+                               (static_cast<uint64_t>(buff[9 + i + 6] & 0xFF) << 24) |
+                               (static_cast<uint64_t>(buff[9 + i + 7] & 0xFF) << 16) |
+                               (static_cast<uint64_t>(buff[9 + i + 4] & 0xFF) << 8) |
+                               (static_cast<uint64_t>(buff[9 + i + 5] & 0xFF)));
+                    break;
+                default: //DCBA
+                    bufData = ((static_cast<uint64_t>(buff[9 + i + 7] & 0xFF) << 56) |
+                               (static_cast<uint64_t>(buff[9 + i + 6] & 0xFF) << 48) |
+                               (static_cast<uint64_t>(buff[9 + i + 5] & 0xFF) << 40) |
+                               (static_cast<uint64_t>(buff[9 + i + 4] & 0xFF) << 32) |
+                               (static_cast<uint64_t>(buff[9 + i + 3] & 0xFF) << 24) |
+                               (static_cast<uint64_t>(buff[9 + i + 2] & 0xFF) << 16) |
+                               (static_cast<uint64_t>(buff[9 + i + 1] & 0xFF) << 8) |
+                               (static_cast<uint64_t>(buff[9 + i] & 0xFF)));
+                    break;
+                }
+                if (collectionField.buffType == BuffType::D_UINT64) {
+                    collectionField.uint64Data = (bufData);
+                }
+                else {
+                    int64_t int64Data = static_cast<int64_t>(bufData);
+                    collectionField.int64Data = (int64Data);
+                }
+            }
+        }
+        else if (collectionField.buffType == BuffType::D_STRING) {
+            // 特殊字符串格式：一个字节，首位是符号，其他7位是ASCII值(1-127)
+            int len = buff[8];
+            std::string result;
+            for (int i = 0; i < len; i++) {
+                char byteData = buff[9 + i];
+                // 首位是符号位，其他7位是ASCII值
+                bool isNegative = (byteData & 0x80) != 0; // 最高位为1表示负数
+                uint8_t asciiValue = byteData & 0x7F;      // 低7位是ASCII值
+                
+                // 如果ASCII值在1-127范围内，转换为字符
+                if (asciiValue >= 1 && asciiValue <= 127) {
+                    result += static_cast<char>(asciiValue);
+                }
+                // 符号位可以根据需要处理，这里暂时忽略
+            }
+            collectionField.stringBuf = (result);
+        }
 		return true;
 	}
     //解析读线圈
-    bool ModbusTcp::parseCoilBuf(ModbusTcpInfo& modbusTcpInfo, RegisterBuf& registerBuf)
+    bool ModbusTcp::parseCoilBuf(ModbusTcpDevice& modbusTcpDevice, CollectionField& collectionField)
     {
         return false;
     }

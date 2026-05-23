@@ -126,6 +126,8 @@ int main()
     {
         Sleep(1000);
         test.PrintModbusDevices();
+        uint32_t a = test.GetDeviceFielData<uint32_t>(1, 2);
+        cout << "获取到数据test.GetDeviceFielData<uint32_t>(1, 2)：" << a << endl;
     }
     //线程调用
     //int i = 0;

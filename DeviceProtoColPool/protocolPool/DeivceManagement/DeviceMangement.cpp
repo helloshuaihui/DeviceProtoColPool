@@ -10,7 +10,6 @@
 #endif
 
 namespace DeviceMangement {
-
 DeviceInit::DeviceInit(const std::string& configPath) 
     : m_configPath(configPath), 
       m_configLoaded(false), 
@@ -23,9 +22,7 @@ DeviceInit::DeviceInit(const std::string& configPath)
       m_ifAutoLoadDB(true) {
     db = new DB::SQLite();
 }
-
 DeviceInit::~DeviceInit() {}
-
 bool DeviceInit::fileExists(const std::string& path) const {
 #ifdef _WIN32
     DWORD attr = GetFileAttributesA(path.c_str());
@@ -35,7 +32,6 @@ bool DeviceInit::fileExists(const std::string& path) const {
     return (stat(path.c_str(), &buffer) == 0 && S_ISREG(buffer.st_mode));
 #endif
 }
-
 bool DeviceInit::createFile(const std::string& filePath)
 {
     size_t pos = filePath.find_last_of("/\\");
@@ -46,7 +42,7 @@ bool DeviceInit::createFile(const std::string& filePath)
         if (!(stat(dir.c_str(), &info) == 0 && (info.st_mode & S_IFDIR))) {
             // 创建目录
             #ifdef _WIN32
-                mkdir(dir.c_str());
+                int a = mkdir(dir.c_str());
             #else
                 mkdir(dir.c_str(), 0755);
             #endif
@@ -59,7 +55,6 @@ bool DeviceInit::createFile(const std::string& filePath)
     file.close();
     return ok;
 }
-
 bool DeviceInit::createDefaultConfig() {
     cJSON* root = cJSON_CreateObject();
     if (!root) return false;
@@ -92,7 +87,6 @@ bool DeviceInit::createDefaultConfig() {
     cJSON_Delete(root);
     return true;
 }
-
 bool DeviceInit::parseConfig(cJSON* root) {
     cJSON* item = nullptr;
 
@@ -133,7 +127,6 @@ bool DeviceInit::parseConfig(cJSON* root) {
 
     return true;
 }
-
 bool DeviceInit::loadConfig() {
     if (fileExists(m_configPath)) {
         std::ifstream file(m_configPath);
@@ -235,43 +228,33 @@ bool DeviceInit::loadDatabase() {
     m_dbInitialized = true;
     return true;
 }
-
 bool DeviceInit::isConfigLoaded() const {
     return m_configLoaded;
 }
-
 bool DeviceInit::isDatabaseInitialized() const {
     return m_dbInitialized;
 }
-
 std::string DeviceInit::getDBPath() const {
     return m_dbPath;
 }
-
 bool DeviceInit::getIsTimedCollection() const {
     return m_isTimedCollection;
 }
-
 int DeviceInit::getCollectionInterval() const {
     return m_collectionInterval;
 }
-
 int DeviceInit::getMaxConnectionTime() const {
     return m_maxConnectionTime;
 }
-
 bool DeviceInit::getIsReconnect() const {
     return m_isReconnect;
 }
-
 int DeviceInit::getReconnectInterval() const {
     return m_reconnectInterval;
 }
-
 bool DeviceInit::getIfAutoLoadDB() const {
     return m_ifAutoLoadDB;
 }
-
 DeviceCollect::DeviceCollect() {
     //加载配置 数据库
     this->loadConfig(); //加载本地配置文件
@@ -281,7 +264,6 @@ DeviceCollect::DeviceCollect() {
     this->initCollectConfig(); //初始化连接配置
     this->ModbusTcpDevices.initDeviceConn(); //初始化连接
 }
-
 DeviceCollect::~DeviceCollect() {}
 bool DeviceCollect::AddProtocolType(const ProtocolType& protocolType) {
     if (!db || !db->isOpen()) {
@@ -543,12 +525,10 @@ Device* DeviceCollect::GetDeviceInfo(int id)
     }
     return nullptr;
 }
-
 bool DeviceCollect::LoadDeviceToPool()
 {
     return DevicesMapping();
 }
-
 // 设备委托 - 将设备对应到相应的驱动中进行管理
 bool DeviceCollect::DevicesMapping()
 {
@@ -559,7 +539,7 @@ bool DeviceCollect::DevicesMapping()
     }
     return true;
 }
-
+//modbus tcp 协议映射
 bool DeviceCollect::ModbusTcpDevicesMapping(Device &device)
 {
     ModbusTcp::ModbusTcpDevice modbusTcpDevice = {0};
@@ -581,7 +561,7 @@ bool DeviceCollect::ModbusTcpDevicesMapping(Device &device)
     }
     return false;
 }
-
+//初始化采集配置
 void DeviceCollect::initCollectConfig()
 {
     //初始化modbus采集配置

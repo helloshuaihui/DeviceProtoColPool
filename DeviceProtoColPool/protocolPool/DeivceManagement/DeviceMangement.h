@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #pragma execution_character_set("utf-8")
 #include <cjson/cJSON.h>
 #include <string>
@@ -136,6 +136,12 @@ public:
     void PrintCollectionField(ModbusTcp::CollectionField collectionField);
     //启动采集
     void StartCollection();
+    template<typename T>
+    //获取设备数据
+    T GetDeviceFielData(int did,int cid);
+    template<typename T>
+    //获取设备所有数据
+    T GetDeviceData(int did);
 private:
     //协议类型列表
     std::vector<ProtocolType> ProtocolTypes;
@@ -156,5 +162,34 @@ private:
     //初始化采集配置
     void initCollectConfig();
 };
+
+
+
+template<typename T>
+T DeviceCollect::GetDeviceFielData(int did, int cid)
+{
+    for (int i = 0; i < this->Devices.size(); i++) {
+        if (this->Devices[i].id == did) {
+            //协议判断
+            if (this->Devices[i].protocol == "MODBUSTCP") {
+                return this->ModbusTcpDevices.getDeviceFieldData<T>(did, cid);
+            }
+        }
+    }
+    return T();
+}
+template<typename T>
+T DeviceCollect::GetDeviceData(int did)
+{
+    for (int i = 0; i < this->Devices.size(); i++) {
+        if (this->Devices[i].id == did) {
+            //协议判断
+            if (this->Devices[i].protocol == "MODBUSTCP") {
+                return this->ModbusTcpDevices.getDeviceData(did);
+            }
+        }
+    }
+    return T();
+}
 
 } // namespace DeviceMangement
